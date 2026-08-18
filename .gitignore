@@ -1,0 +1,39 @@
+# Environment & secrets
+.env
+.env.local
+
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Input media (large files)
+inputs/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.pdf
+*.mp4
+*.mov
+
+# Generated outputs
+explanation_output/
+query_output/
+ocr_generated/

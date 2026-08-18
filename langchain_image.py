@@ -29,8 +29,7 @@ def encode_image(image_path: str) -> tuple[str, str]:
 
 @tool
 def extract_text_from_image(image_path: str) -> str:
-    """Extract all text from an image file and save it to a timestamped .txt file.
-    Returns the extracted text and the output file path."""
+    """Extract all text from an image file and save it to a timestamped .txt file."""
     path = Path(image_path)
     if not path.exists():
         return f"Error: File not found: {image_path}"
@@ -61,15 +60,35 @@ def extract_text_from_image(image_path: str) -> str:
     return f"Extracted text saved to: {out_path}\n\n{text}"
 
 
+@tool
+def extract_text_from_image_folder(folder_path: str) -> str:
+    """Extract text from all images in a folder."""
+    folder = Path(folder_path)
+    if not folder.is_dir():
+        return f"Error: Not a directory: {folder_path}"
+
+    image_extensions = {".png", ".jpg", ".jpeg", ".webp"}
+    image_files = sorted([f for f in folder.iterdir() if f.suffix.lower() in image_extensions])
+    if not image_files:
+        return f"No image files found in {folder_path}"
+
+    results = []
+    for img_file in image_files:
+        result = extract_text_from_image.invoke(str(img_file))
+        results.append(result)
+
+    return "\n\n=== ===\n\n".join(results)
+
+
 SYSTEM_PROMPT = """You are a helpful OCR assistant. Your job is to extract text from images.
 
-When given an image path, use the `extract_text_from_image` tool to extract all text.
+When given an image path or folder, use the appropriate tool to extract all text.
 Return the result clearly to the user, including where the output file was saved."""
 
 
 def ocr_agent(image_path: str) -> str:
     model = ChatOpenAI(
-        model="qwen-35b",
+        model="nemotron-35",
         base_url=LLM_URL,
         api_key=LLM_KEY,
     )
@@ -85,7 +104,42 @@ def ocr_agent(image_path: str) -> str:
     return result["messages"][-1].content
 
 
+def ocr_folder_agent(folder_path: str) -> str:
+    model = ChatOpenAI(
+        model="nemotron-35",
+        base_url=LLM_URL,
+        api_key=LLM_KEY,
+    )
+    agent = create_agent(
+        model=model,
+        tools=[extract_text_from_image, extract_text_from_image_folder],
+        system_prompt=SYSTEM_PROMPT,
+    )
+    result = agent.invoke(
+        {"messages": [("user", f"Extract text from all images in folder: {folder_path}")]},
+        stream_mode="values",
+    )
+    return result["messages"][-1].content
+
+
 if __name__ == "__main__":
     import sys
-    img = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "declaration.jpg")
-    print(ocr_agent(img))
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+    if len(sys.argv) < 2:
+        print("Usage: python langchain_image.py <image_path|folder_path>")
+        print("  Folder mode: scans all .png/.jpg/.jpeg/.webp files")
+        print("  File mode: processes a single image")
+        sys.exit(1)
+
+    target = sys.argv[1]
+    if Path(target).is_dir():
+        print(f"[Folder mode] Scanning: {target}")
+        result = ocr_folder_agent(target)
+    else:
+        print(f"[File mode] Processing: {target}")
+        result = ocr_agent(target)
+
+    print(result)

@@ -1,5 +1,4 @@
 import base64
-import io
 import os
 from datetime import datetime
 from pathlib import Path
@@ -72,15 +71,34 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     return f"Extracted {len(page_images)} pages. Saved to: {out_path}\n\n{full_text}"
 
 
+@tool
+def extract_text_from_pdf_folder(folder_path: str) -> str:
+    """Extract text from all PDFs in a folder and save OCR outputs to ocr_output/."""
+    folder = Path(folder_path)
+    if not folder.is_dir():
+        return f"Error: Not a directory: {folder_path}"
+
+    pdf_files = sorted(folder.glob("*.pdf"))
+    if not pdf_files:
+        return f"No PDF files found in {folder_path}"
+
+    results = []
+    for pdf_file in pdf_files:
+        result = extract_text_from_pdf.invoke(str(pdf_file))
+        results.append(result)
+
+    return "\n\n=== ===\n\n".join(results)
+
+
 SYSTEM_PROMPT = """You are a helpful PDF OCR assistant. Your job is to extract text from PDF files.
 
-When given a PDF path, use the `extract_text_from_pdf` tool to extract all text from every page.
+When given a PDF path or folder, use the appropriate tool to extract all text from every page.
 Return the result clearly to the user, including where the output file was saved."""
 
 
 def pdf_agent(pdf_path: str) -> str:
     model = ChatOpenAI(
-        model="qwen-35b",
+        model="nemotron-35",
         base_url=LLM_URL,
         api_key=LLM_KEY,
     )
@@ -96,7 +114,43 @@ def pdf_agent(pdf_path: str) -> str:
     return result["messages"][-1].content
 
 
+def pdf_folder_agent(folder_path: str) -> str:
+    model = ChatOpenAI(
+        model="nemotron-35",
+        base_url=LLM_URL,
+        api_key=LLM_KEY,
+    )
+    agent = create_agent(
+        model=model,
+        tools=[extract_text_from_pdf, extract_text_from_pdf_folder],
+        system_prompt=SYSTEM_PROMPT,
+    )
+    result = agent.invoke(
+        {"messages": [("user", f"Extract text from all PDFs in folder: {folder_path}")]},
+        stream_mode="values",
+    )
+    return result["messages"][-1].content
+
+
 if __name__ == "__main__":
     import sys
-    pdf = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "pdfdeclare.pdf")
-    print(pdf_agent(pdf))
+    # Set UTF-8 output for Windows
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+    if len(sys.argv) < 2:
+        print("Usage: python langchain_pdf.py <pdf_path|folder_path>")
+        print("  Folder mode: scans all .pdf files in the folder")
+        print("  File mode: processes a single PDF")
+        sys.exit(1)
+
+    target = sys.argv[1]
+    if Path(target).is_dir():
+        print(f"[Folder mode] Scanning: {target}")
+        result = pdf_folder_agent(target)
+    else:
+        print(f"[File mode] Processing: {target}")
+        result = pdf_agent(target)
+
+    print(result)
